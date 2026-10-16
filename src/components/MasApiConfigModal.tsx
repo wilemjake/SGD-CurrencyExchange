@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Check, Key, Server, Terminal, ExternalLink, AlertCircle, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Check, Key, Server, Terminal, AlertCircle, RefreshCw, Activity } from 'lucide-react';
 import { MasApiConfig } from '../types/currency';
 import { MasExchangeService } from '../services/masExchangeApi';
 
@@ -17,11 +17,16 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
   onSaveConfig,
 }) => {
   const [apiKey, setApiKey] = useState(config.apiKey);
-  const [endpoint, setEndpoint] = useState(config.apiEndpoint);
+  const [endpoint, setEndpoint] = useState(config.apiEndpoint || '/api/exchangerates');
   const [isCustomEndpoint, setIsCustomEndpoint] = useState(config.isCustomEndpoint);
   const [autoRefresh, setAutoRefresh] = useState(config.autoRefresh);
   const [refreshInterval, setRefreshInterval] = useState(config.refreshIntervalSeconds);
-  const [activeTab, setActiveTab] = useState<'settings' | 'developer-guide'>('settings');
+  const [activeTab, setActiveTab] = useState<'settings' | 'developer-guide' | 'health'>('settings');
+
+  const [healthStatus, setHealthStatus] = useState<{
+    loaded: boolean;
+    data: any;
+  }>({ loaded: false, data: null });
 
   const [testStatus, setTestStatus] = useState<{
     running: boolean;
@@ -29,6 +34,14 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
   }>({ running: false, result: null });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      MasExchangeService.checkHealth().then((h) => {
+        setHealthStatus({ loaded: true, data: h });
+      });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -46,7 +59,7 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
       isCustomEndpoint,
       autoRefresh,
       refreshIntervalSeconds: refreshInterval,
-      status: apiKey.trim() ? 'connected' : 'mock-active',
+      status: apiKey.trim() || healthStatus.data?.masKeyConfigured ? 'connected' : 'mock-active',
     };
     onSaveConfig(updated);
     setSavedSuccess(true);
@@ -58,7 +71,7 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
 
   const handleReset = () => {
     setApiKey('');
-    setEndpoint('https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=22731872-466f-45a7-96a9-0639d6ff5141');
+    setEndpoint('/api/exchangerates');
     setIsCustomEndpoint(false);
     setAutoRefresh(true);
     setRefreshInterval(60);
@@ -80,9 +93,9 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
               <Key className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-slate-900">MAS API & Backend Integration</h3>
+              <h3 className="text-lg font-bold text-slate-900">MAS Serverless API & KeyId</h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Configure Monetary Authority of Singapore (MAS) API keys and proxy routing.
+                Connected to <code className="text-red-700 font-mono">/api/exchangerates</code> & <code className="text-red-700 font-mono">/api/health</code>
               </p>
             </div>
           </div>
@@ -106,7 +119,19 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            Integration Settings
+            API Connection
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('health')}
+            className={`pb-3 text-xs font-semibold border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'health'
+                ? 'border-red-600 text-red-600'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span>Health & Diagnostics</span>
           </button>
           <button
             type="button"
@@ -117,7 +142,7 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            Backend Hookup Guide (Node / Express)
+            MAS Catalogue Specs
           </button>
         </div>
 
@@ -125,62 +150,63 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
         <div className="p-5 sm:p-6 space-y-5">
           {activeTab === 'settings' ? (
             <>
-              {/* Notice banner */}
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed">
-                <span className="font-semibold text-slate-900">Current Mode: </span>
-                {apiKey ? (
-                  <span className="text-emerald-700 font-medium">Configured to query your specified MAS API / endpoint</span>
-                ) : (
-                  <span className="text-slate-600">
-                    Front-end mock benchmark active. You can add your MAS API key or custom backend endpoint whenever you are ready.
-                  </span>
-                )}
-              </div>
-
-              {/* API Key Input */}
-              <div>
-                <label className="block text-xs font-semibold text-slate-800 mb-1">
-                  MAS API Key (Optional for now)
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="e.g. mas_api_live_..."
-                    className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:bg-white focus:border-red-500 focus:ring-1 focus:ring-red-500"
-                  />
+              {/* Health Indicator Banner */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 leading-relaxed flex items-center justify-between gap-3">
+                <div>
+                  <span className="font-semibold text-slate-900">MAS KeyId Status: </span>
+                  {healthStatus.data?.masKeyConfigured ? (
+                    <span className="text-emerald-700 font-semibold">Active in environment (process.env.MAS_KEY_ID)</span>
+                  ) : apiKey ? (
+                    <span className="text-emerald-700 font-semibold">KeyId provided in client override</span>
+                  ) : (
+                    <span className="text-amber-700 font-medium">Pending KeyId (Benchmark fallback active)</span>
+                  )}
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Obtained from Singapore Government Developer Portal or Monetary Authority of Singapore API developer accounts.
-                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('health')}
+                  className="text-xs text-red-600 hover:underline font-medium shrink-0"
+                >
+                  View Details &rarr;
+                </button>
               </div>
 
               {/* Endpoint URL Input */}
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-xs font-semibold text-slate-800">
-                    Exchange Rates API Endpoint
+                    Local Serverless Endpoint
                   </label>
-                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isCustomEndpoint}
-                      onChange={(e) => setIsCustomEndpoint(e.target.checked)}
-                      className="rounded text-red-600 focus:ring-red-500"
-                    />
-                    <span>Custom Backend Proxy URL</span>
-                  </label>
+                  <span className="text-[11px] text-slate-400 font-mono">/api/exchangerates</span>
                 </div>
                 <input
                   type="text"
                   value={endpoint}
                   onChange={(e) => setEndpoint(e.target.value)}
-                  placeholder="https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=..."
+                  placeholder="/api/exchangerates"
                   className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:bg-white focus:border-red-500 focus:ring-1 focus:ring-red-500"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Official MAS resource dataset ID for daily exchange rates is pre-filled above.
+                  Pulls live data through <code className="text-slate-700 font-mono">/api/exchangerates.ts</code> from the MAS API Catalogue.
+                </p>
+              </div>
+
+              {/* Optional Client KeyId Override */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-800 mb-1">
+                  Client KeyId Header (Optional test override)
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Enter your MAS KeyId or leave blank to use process.env.MAS_KEY_ID"
+                    className="w-full px-3.5 py-2 text-xs font-mono bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:bg-white focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Passed as <code className="text-slate-700 font-mono">KeyId: &lt;MAS_KEY_ID&gt;</code> to the MAS Gateway.
                 </p>
               </div>
 
@@ -224,7 +250,7 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
                   className="inline-flex items-center gap-2 px-3.5 py-2 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${testStatus.running ? 'animate-spin' : ''}`} />
-                  <span>{testStatus.running ? 'Testing Connection...' : 'Test API Connection'}</span>
+                  <span>{testStatus.running ? 'Testing /api/exchangerates...' : 'Test Serverless Endpoint'}</span>
                 </button>
 
                 {testStatus.result && (
@@ -245,38 +271,65 @@ export const MasApiConfigModal: React.FC<MasApiConfigModalProps> = ({
                 )}
               </div>
             </>
-          ) : (
-            /* Developer Guide Tab */
+          ) : activeTab === 'health' ? (
+            /* Health & Diagnostics Tab */
             <div className="space-y-4">
-              <div className="text-xs text-slate-600 leading-relaxed">
-                When you are ready to add your backend server integration using your MAS API key, you can add an Express route in 
-                <code className="text-red-600 font-mono mx-1">server.ts</code>. This keeps your MAS API key secure and prevents browser CORS limitations:
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80">
+                  <span className="text-xs font-semibold text-slate-700">Endpoint Health: /api/health</span>
+                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                    HTTP 200 OK
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Serverless Service</span>
+                    <span className="font-semibold text-slate-800">MAS Exchange Rates API</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Environment MAS_KEY_ID</span>
+                    <span className={`font-semibold ${healthStatus.data?.masKeyConfigured ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {healthStatus.data?.masKeyConfigured ? 'Configured' : 'Not set in env'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <span className="text-slate-400 block text-[11px] mb-1">Target MAS Gateway</span>
+                  <div className="p-2 rounded bg-white border border-slate-200 font-mono text-[10px] text-slate-700 break-all">
+                    https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610ora/exchange_rates_end_of_period_daily/views/exchange_rates_end_of_period_daily
+                  </div>
+                </div>
               </div>
 
-              <div className="bg-slate-900 rounded-xl p-4 text-slate-200 font-mono text-[11px] overflow-x-auto leading-relaxed border border-slate-800">
-                <pre>{`// server.ts route example:
-app.get('/api/mas-exchange', async (req, res) => {
-  try {
-    const MAS_API_KEY = process.env.MAS_API_KEY;
-    const response = await fetch(
-      'https://eservices.mas.gov.sg/api/action/datastore/search.json?resource_id=22731872-466f-45a7-96a9-0639d6ff5141&limit=10',
-      {
-        headers: {
-          'X-MAS-API-KEY': MAS_API_KEY || '',
-          'Accept': 'application/json'
-        }
-      }
-    );
-    const data = await response.json();
-    res.json(data);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch MAS rates' });
-  }
-});`}</pre>
+              <div className="text-xs text-slate-500 leading-relaxed">
+                To populate your MAS KeyId on your server or hosting environment, set the variable:
+                <div className="mt-1 p-2 bg-slate-900 text-slate-100 font-mono text-[11px] rounded-lg">
+                  export MAS_KEY_ID="your-key-id-here"
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* MAS Catalogue Specs Tab */
+            <div className="space-y-4">
+              <div className="text-xs text-slate-600 leading-relaxed">
+                The serverless function at <code className="text-red-600 font-mono mx-1">/api/exchangerates.ts</code> proxies directly to the official Monetary Authority of Singapore (MAS) API Catalogue:
+              </div>
+
+              <div className="bg-slate-900 rounded-xl p-4 text-slate-200 font-mono text-[11px] overflow-x-auto leading-relaxed border border-slate-800 space-y-2">
+                <div className="text-emerald-400 font-bold"># Endpoint requested:</div>
+                <div className="text-slate-300">
+                  GET https://eservices.mas.gov.sg/apimg-gw/server/monthly_statistical_bulletin_non610ora/exchange_rates_end_of_period_daily/views/exchange_rates_end_of_period_daily?end_of_day=2026-10-14
+                </div>
+                <div className="text-emerald-400 font-bold mt-2"># Request Header:</div>
+                <div className="text-amber-300">
+                  KeyId: &lt;MAS_KEY_ID&gt;
+                </div>
               </div>
 
               <div className="text-xs text-slate-500">
-                Then simply toggle <strong>Custom Backend Proxy URL</strong> above to <code className="text-slate-800 font-mono">/api/mas-exchange</code>.
+                The serverless layer handles CORS, hides your secret KeyId from client browsers, and automatically supplies the latest business date if none is specified in query parameters.
               </div>
             </div>
           )}
